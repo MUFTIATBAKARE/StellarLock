@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
+
+  --color-background: oklch(0.17 0.012 220);
+  --color-foreground: oklch(0.95 0.005 220);
+
+  --color-card: oklch(0.21 0.014 220);
+  --color-card-foreground: oklch(0.95 0.005 220);
+
+  --color-popover: oklch(0.19 0.014 220);
+  --color-popover-foreground: oklch(0.95 0.005 220);
+
+  --color-primary: oklch(0.78 0.16 175);
+  --color-primary-foreground: oklch(0.17 0.03 200);
+
+  --color-secondary: oklch(0.27 0.016 220);
+  --color-secondary-foreground: oklch(0.95 0.005 220);
+
+  --color-muted: oklch(0.25 0.014 220);
+  --color-muted-foreground: oklch(0.68 0.012 220);
+
+  --color-accent: oklch(0.28 0.02 200);
+  --color-accent-foreground: oklch(0.95 0.005 220);
+
+  --color-destructive: oklch(0.62 0.2 25);
+  --color-destructive-foreground: oklch(0.98 0.005 25);
+
+  --color-success: oklch(0.78 0.16 165);
+  --color-success-foreground: oklch(0.17 0.03 200);
+
+  --color-warning: oklch(0.8 0.15 80);
+  --color-warning-foreground: oklch(0.2 0.03 80);
+
+  --color-border: oklch(0.3 0.014 220);
+  --color-input: oklch(0.3 0.014 220);
+  --color-ring: oklch(0.78 0.16 175);
+
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    background-color: var(--color-background);
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: oklch(0.78 0.16 175 / 0.3);
+  }
+}
+
+/* subtle grid backdrop for hero / explorer sections */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, oklch(0.3 0.014 220 / 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.3 0.014 220 / 0.4) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.bg-grid-fade {
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+}
