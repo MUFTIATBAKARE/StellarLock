@@ -56,7 +56,7 @@ export function LockDetail() {
 }
 
 function LockDetailView({ lock, onChange }: { lock: Lock; onChange: () => void }) {
-  const { address } = useWallet()
+  const { address, signTransaction } = useWallet()
   const navigate = useNavigate()
   const isLp = lock.kind === "lp"
 
@@ -73,7 +73,9 @@ function LockDetailView({ lock, onChange }: { lock: Lock; onChange: () => void }
   async function handleWithdraw() {
     setBusy("withdraw")
     try {
-      await (isLp ? withdrawLpLock(lock.id) : withdrawLock(lock.id))
+      await (isLp
+        ? withdrawLpLock(lock.id, address!, signTransaction)
+        : withdrawLock(lock.id, address!, signTransaction))
       onChange()
     } finally {
       setBusy(null)
@@ -82,11 +84,13 @@ function LockDetailView({ lock, onChange }: { lock: Lock; onChange: () => void }
 
   async function handleExtend() {
     if (!newDate) return
-    const ts = new Date(newDate).getTime()
-    if (ts <= lock.unlockAt) return
+    const ts = Math.floor(new Date(newDate).getTime() / 1000)
+    if (ts <= Math.floor(lock.unlockAt / 1000)) return
     setBusy("extend")
     try {
-      await (isLp ? extendLpLock(lock.id, ts) : extendLock(lock.id, ts))
+      await (isLp
+        ? extendLpLock(lock.id, ts, address!, signTransaction)
+        : extendLock(lock.id, ts, address!, signTransaction))
       setExtendOpen(false)
       onChange()
     } finally {

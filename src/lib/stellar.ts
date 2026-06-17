@@ -1,34 +1,136 @@
-/**
- * Stellar network + connection config.
- *
- * When the contracts are deployed, fill in the contract ids and RPC url.
- * The rest of the app reads from these constants so wiring real bindings
- * is isolated to lib/token-locker.ts + lib/lp-locker.ts.
- */
+import {
+  Contract,
+  Networks,
+  rpc as SorobanRpc,
+  TransactionBuilder,
+  BASE_FEE,
+  scValToNative,
+  xdr,
+} from "@stellar/stellar-sdk"
 
 export const NETWORK = {
-  /** "TESTNET" | "PUBLIC" */
-  passphrase: "Test SDF Network ; September 2015",
+  passphrase: Networks.TESTNET,
   rpcUrl: "https://soroban-testnet.stellar.org",
   horizonUrl: "https://horizon-testnet.stellar.org",
   networkName: "testnet" as const,
 }
 
 export const CONTRACTS = {
-  /** TODO: replace with deployed Token Locker contract id (C...) */
-  tokenLocker: "CTOKENLOCKER_CONTRACT_ID_PLACEHOLDER_000000000000000000",
-  /** TODO: replace with deployed LP Locker contract id (C...) */
-  lpLocker: "CLPLOCKER_CONTRACT_ID_PLACEHOLDER_00000000000000000000",
+  tokenLocker: "CBFCKEOQRQIXKLGU4QBUQVOINOKFBOXJ37LXEKLKNUO6TW4FNGDU26AW",
+  lpLocker: "CA3WYETNIF5IAF3VUNQ3SYKZFV45TOFBF7CEZ46I7QEBPWTRM73WLEI4",
 }
 
-/** How long to pretend network calls take, so loading states are visible. */
-export const MOCK_LATENCY_MS = 450
+// Soroban transactions need a higher base fee than classic Stellar
+const SOROBAN_FEE = "1000000" // 0.1 XLM — covers resource fees
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+// ── RPC client ────────────────────────────────────────────────────────────────
+
+let _rpc: SorobanRpc.Server | null = null
+export function getRpc(): SorobanRpc.Server {
+  if (!_rpc) _rpc = new SorobanRpc.Server(NETWORK.rpcUrl, { allowHttp: false })
+  return _rpc
 }
 
-/** Build a Stellar Expert explorer link for an address on the active network. */
+function simError(result: unknown): string {
+  // Extract a readable string from whatever shape the sim error takes
+  if (!result || typeof result !== "object") return String(result)
+  const r = result as Record<string, unknown>
+  if (typeof r.error === "string") return r.error
+  if (typeof r.error === "object") return JSON.stringify(r.error)
+  return JSON.stringify(r)
+}
+
+// ── Simulate (read-only) ──────────────────────────────────────────────────────
+
+export async function simulateCall<T>(
+  contractId: string,
+  method: string,
+  args: xdr.ScVal[],
+): Promise<T> {
+  const rpc = getRpc()
+
+  const dummySource = {
+    accountId: () => "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+    sequenceNumber: () => "0",
+    incrementSequenceNumber: () => {},
+  }
+
+  const contract = new Contract(contractId)
+  const tx = new TransactionBuilder(dummySource as never, {
+    fee: BASE_FEE,
+    networkPassphrase: NETWORK.passphrase,
+  })
+    .addOperation(contract.call(method, ...args))
+    .setTimeout(30)
+    .build()
+
+  const result = await rpc.simulateTransaction(tx)
+  console.log("[simulateCall]", method, result)
+
+  if (SorobanRpc.Api.isSimulationError(result)) {
+    throw new Error(`Simulation error: ${simError(result)}`)
+  }
+
+  const retval = (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).result?.retval
+  if (!retval) return undefined as T
+  return scValToNative(retval) as T
+}
+
+// ── Submit (write) ────────────────────────────────────────────────────────────
+
+export async function submitCall(
+  contractId: string,
+  method: string,
+  args: xdr.ScVal[],
+  sourceAddress: string,
+  signTransaction: (xdr: string) => Promise<{ signedTxXdr: string }>,
+): Promise<void> {
+  const rpc = getRpc()
+  const account = await rpc.getAccount(sourceAddress)
+  const contract = new Contract(contractId)
+
+  const tx = new TransactionBuilder(account, {
+    fee: SOROBAN_FEE,
+    networkPassphrase: NETWORK.passphrase,
+  })
+    .addOperation(contract.call(method, ...args))
+    .setTimeout(30)
+    .build()
+
+  const simResult = await rpc.simulateTransaction(tx)
+  console.log("[submitCall sim]", method, simResult)
+
+  if (SorobanRpc.Api.isSimulationError(simResult)) {
+    throw new Error(`Simulation error: ${simError(simResult)}`)
+  }
+
+  const preparedTx = SorobanRpc.assembleTransaction(tx, simResult).build()
+
+  const { signedTxXdr } = await signTransaction(preparedTx.toXDR())
+
+  const sendResult = await rpc.sendTransaction(
+    TransactionBuilder.fromXDR(signedTxXdr, NETWORK.passphrase),
+  )
+  console.log("[submitCall send]", sendResult)
+
+  if (sendResult.status === "ERROR") {
+    throw new Error(`Send error: ${sendResult.errorResult?.toXDR("base64") ?? "unknown"}`)
+  }
+
+  let getResult = await rpc.getTransaction(sendResult.hash)
+  while (getResult.status === SorobanRpc.Api.GetTransactionStatus.NOT_FOUND) {
+    await new Promise((r) => setTimeout(r, 1500))
+    getResult = await rpc.getTransaction(sendResult.hash)
+  }
+  console.log("[submitCall result]", getResult)
+
+  if (getResult.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+    throw new Error(`Transaction failed: ${JSON.stringify(getResult)}`)
+  }
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+
 export function explorerLink(address: string): string {
   return `https://stellar.expert/explorer/${NETWORK.networkName}/contract/${address}`
 }

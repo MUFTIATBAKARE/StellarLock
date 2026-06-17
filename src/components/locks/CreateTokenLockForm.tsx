@@ -5,7 +5,6 @@ import { Input, Label } from "@/components/ui/Input"
 import { Button } from "@/components/ui/Button"
 import { useWallet } from "@/hooks/useWallet"
 import { createTokenLock } from "@/lib/token-locker"
-import { TOKENS } from "@/lib/mock-data"
 import { formatDate } from "@/lib/utils"
 
 const DAY = 86_400_000
@@ -17,38 +16,54 @@ const PRESETS = [
 ]
 
 export function CreateTokenLockForm() {
-  const { address } = useWallet()
+  const { address, signTransaction } = useWallet()
   const navigate = useNavigate()
 
-  const [tokenAddress, setTokenAddress] = useState(TOKENS.GLOW.address)
+  const [tokenAddress, setTokenAddress] = useState("")
   const [amount, setAmount] = useState("")
   const [beneficiary, setBeneficiary] = useState("")
   const [unlockDate, setUnlockDate] = useState("")
   const [vesting, setVesting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const minDate = useMemo(() => new Date(Date.now() + DAY).toISOString().slice(0, 10), [])
+  const unlockTs = unlockDate ? new Date(unlockDate).getTime() : 0
+  const valid = tokenAddress.trim().length > 4 && Number(amount) > 0 && unlockTs > Date.now()
 
   function applyPreset(days: number) {
     setUnlockDate(new Date(Date.now() + days * DAY).toISOString().slice(0, 10))
   }
 
-  const unlockTs = unlockDate ? new Date(unlockDate).getTime() : 0
-  const valid = Number(amount) > 0 && unlockTs > Date.now()
-
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!valid) return
+    setError(null)
     setSubmitting(true)
     try {
-      const { id } = await createTokenLock({
-        tokenAddress,
-        amount: Number(amount),
-        beneficiary: beneficiary.trim() || address!,
-        unlockAt: unlockTs,
-        vesting: vesting ? { start: Date.now(), end: unlockTs } : undefined,
-      })
+      const { id } = await createTokenLock(
+        {
+          tokenAddress: tokenAddress.trim(),
+          amount: Number(amount),
+          beneficiary: beneficiary.trim() || address!,
+          unlockAt: Math.floor(unlockTs / 1000),
+          vesting: vesting
+            ? { start: Math.floor(Date.now() / 1000), end: Math.floor(unlockTs / 1000) }
+            : undefined,
+        },
+        address!,
+        signTransaction,
+      )
       navigate(`/app/lock/${id}`)
+    } catch (err: unknown) {
+      console.error("[createLock error]", err)
+      if (err instanceof Error) {
+        setError(err.message)
+      } else if (typeof err === "object" && err !== null) {
+        setError(JSON.stringify(err, null, 2))
+      } else {
+        setError(String(err))
+      }
     } finally {
       setSubmitting(false)
     }
@@ -57,19 +72,17 @@ export function CreateTokenLockForm() {
   return (
     <form onSubmit={submit} className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <Label htmlFor="token">Token</Label>
-        <select
+        <Label htmlFor="token">Token contract address</Label>
+        <Input
           id="token"
+          placeholder="C… (Soroban token contract)"
           value={tokenAddress}
           onChange={(e) => setTokenAddress(e.target.value)}
-          className="h-11 rounded-lg border border-input bg-background/60 px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {Object.values(TOKENS).map((t) => (
-            <option key={t.address} value={t.address}>
-              {t.symbol} — {t.name}
-            </option>
-          ))}
-        </select>
+          className="font-mono"
+        />
+        <p className="text-xs text-muted-foreground">
+          The Soroban contract address of the token you want to lock.
+        </p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -143,13 +156,18 @@ export function CreateTokenLockForm() {
           Locks are immutable: you can extend the unlock date later, but never shorten it.
           {unlockTs > Date.now() && (
             <>
-              {" "}
-              Funds unlock on{" "}
+              {" "}Funds unlock on{" "}
               <span className="font-medium text-foreground">{formatDate(unlockTs)}</span>.
             </>
           )}
         </span>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       <Button type="submit" size="lg" loading={submitting} disabled={!valid}>
         <Lock className="h-4 w-4" />

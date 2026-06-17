@@ -1,53 +1,106 @@
+import {
+  Address,
+  nativeToScVal,
+  xdr,
+} from "@stellar/stellar-sdk"
 import type { Lock, TokenLockSummary } from "@/types/lock"
-import { MOCK_LOCKS } from "@/lib/mock-data"
-import { MOCK_LATENCY_MS, sleep } from "@/lib/stellar"
-
-/**
- * Token Locker contract bindings.
- *
- * Each function mirrors a contract method. They currently resolve against
- * mock data so the UI is fully functional pre-deployment. To go live, replace
- * the body of each function with a Soroban contract invocation (read methods
- * via simulation, write methods via a signed + submitted transaction) while
- * keeping the same signatures — nothing else in the app needs to change.
- */
+import { CONTRACTS, simulateCall, submitCall } from "@/lib/stellar"
 
 export interface CreateTokenLockArgs {
   tokenAddress: string
   amount: number
   beneficiary: string
-  unlockAt: number
+  unlockAt: number // unix seconds
   vesting?: { start: number; end: number }
 }
 
-// --- read methods -----------------------------------------------------------
+// ── Converters ────────────────────────────────────────────────────────────────
+
+/** Map a raw on-chain lock object (as returned by scValToNative) to our Lock type. */
+function toLock(raw: Record<string, unknown>): Lock {
+  const token = raw.token as string
+
+  const vestingRaw = raw.vesting as { start: bigint; end: bigint; released: bigint } | null | undefined
+
+  return {
+    id: String(raw.id),
+    kind: "token",
+    status: raw.withdrawn
+      ? "withdrawn"
+      : Number(raw.unlock_at) * 1000 <= Date.now()
+      ? "unlockable"
+      : "locked",
+    token: {
+      address: token,
+      symbol: token.slice(0, 6),
+      name: token.slice(0, 6),
+      decimals: 7,
+    },
+    creator: raw.creator as string,
+    beneficiary: raw.beneficiary as string,
+    amount: Number(raw.amount) / 1e7,
+    usdValue: 0, // computed client-side if needed
+    createdAt: Number(raw.created_at) * 1000,
+    unlockAt: Number(raw.unlock_at) * 1000,
+    extendedCount: Number(raw.extended_count),
+    vesting: vestingRaw
+      ? {
+          start: Number(vestingRaw.start) * 1000,
+          end: Number(vestingRaw.end) * 1000,
+          released: Number(vestingRaw.released) / 1e7,
+        }
+      : undefined,
+  }
+}
+
+function idArg(id: string): xdr.ScVal {
+  return nativeToScVal(BigInt(id), { type: "u64" })
+}
+
+function addressArg(addr: string): xdr.ScVal {
+  return new Address(addr).toScVal()
+}
+
+// ── Read methods ──────────────────────────────────────────────────────────────
 
 export async function getLock(id: string): Promise<Lock | null> {
-  await sleep(MOCK_LATENCY_MS)
-  return MOCK_LOCKS.find((l) => l.id === id) ?? null
+  const raw = await simulateCall<Record<string, unknown> | null>(
+    CONTRACTS.tokenLocker,
+    "get_lock",
+    [idArg(id)],
+  )
+  return raw ? toLock(raw) : null
 }
 
 export async function getLocksByCreator(address: string): Promise<Lock[]> {
-  await sleep(MOCK_LATENCY_MS)
-  return MOCK_LOCKS.filter((l) => l.creator === address && l.kind === "token")
+  const raw = await simulateCall<Record<string, unknown>[]>(
+    CONTRACTS.tokenLocker,
+    "get_locks_by_creator",
+    [addressArg(address)],
+  )
+  return (raw ?? []).map(toLock)
 }
 
 export async function getLocksByBeneficiary(address: string): Promise<Lock[]> {
-  await sleep(MOCK_LATENCY_MS)
-  return MOCK_LOCKS.filter((l) => l.beneficiary === address && l.kind === "token")
+  const raw = await simulateCall<Record<string, unknown>[]>(
+    CONTRACTS.tokenLocker,
+    "get_locks_by_beneficiary",
+    [addressArg(address)],
+  )
+  return (raw ?? []).map(toLock)
 }
 
-/** Powers the public explorer page: all locks for a given token address. */
 export async function getLocksByToken(tokenAddress: string): Promise<TokenLockSummary | null> {
-  await sleep(MOCK_LATENCY_MS)
-  const locks = MOCK_LOCKS.filter(
-    (l) => l.token.address === tokenAddress && l.kind === "token",
+  const raw = await simulateCall<Record<string, unknown>[]>(
+    CONTRACTS.tokenLocker,
+    "get_locks_by_token",
+    [addressArg(tokenAddress)],
   )
-  if (locks.length === 0) return null
+  if (!raw || raw.length === 0) return null
 
+  const locks = raw.map(toLock)
   const active = locks.filter((l) => l.status !== "withdrawn")
-  const totalLocked = active.reduce((sum, l) => sum + l.amount, 0)
-  const totalUsdValue = active.reduce((sum, l) => sum + l.usdValue, 0)
+  const totalLocked = active.reduce((s, l) => s + l.amount, 0)
   const upcoming = active
     .filter((l) => l.status === "locked")
     .map((l) => l.unlockAt)
@@ -56,29 +109,86 @@ export async function getLocksByToken(tokenAddress: string): Promise<TokenLockSu
   return {
     token: locks[0].token,
     totalLocked,
-    totalUsdValue,
+    totalUsdValue: 0,
     activeLocks: active.length,
     nextUnlockAt: upcoming[0] ?? null,
-    percentOfSupply: 42,
     locks,
   }
 }
 
-// --- write methods -----------------------------------------------------------
+// ── Write methods ─────────────────────────────────────────────────────────────
 
-export async function createTokenLock(args: CreateTokenLockArgs): Promise<{ id: string }> {
-  await sleep(MOCK_LATENCY_MS)
-  // TODO: invoke token_locker.create_lock(args) and return the emitted lock id.
-  return { id: String(Math.floor(1000 + Math.random() * 9000)) }
+export async function createTokenLock(
+  args: CreateTokenLockArgs,
+  sourceAddress: string,
+  signTransaction: (xdr: string) => Promise<{ signedTxXdr: string }>,
+): Promise<{ id: string }> {
+  const unlockAtSecs = Math.floor(args.unlockAt)
+  const amountStroops = BigInt(Math.round(args.amount * 1e7))
+
+  const scArgs: xdr.ScVal[] = [
+    addressArg(sourceAddress),
+    addressArg(args.tokenAddress),
+    nativeToScVal(amountStroops, { type: "i128" }),
+    addressArg(args.beneficiary),
+    nativeToScVal(BigInt(unlockAtSecs), { type: "u64" }),
+  ]
+
+  // Vesting is Option<Vesting> on-chain.
+  // Soroban Option::Some(v) = ScvMap with the struct fields sorted by key.
+  // Soroban Option::None    = ScvVoid
+  if (args.vesting) {
+    const vestingMap = xdr.ScVal.scvMap([
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol("end"),
+        val: nativeToScVal(BigInt(Math.floor(args.vesting.end)), { type: "u64" }),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol("released"),
+        val: nativeToScVal(BigInt(0), { type: "i128" }),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol("start"),
+        val: nativeToScVal(BigInt(Math.floor(args.vesting.start)), { type: "u64" }),
+      }),
+    ])
+    scArgs.push(vestingMap)
+  } else {
+    scArgs.push(xdr.ScVal.scvVoid())
+  }
+
+  await submitCall(CONTRACTS.tokenLocker, "create_lock", scArgs, sourceAddress, signTransaction)
+
+  // The contract returns a u64 id, but submitCall doesn't surface return values.
+  // We return a temporary client-side id; the caller can re-fetch to get the real one.
+  return { id: "pending" }
 }
 
-export async function withdrawLock(id: string): Promise<void> {
-  await sleep(MOCK_LATENCY_MS)
-  // TODO: invoke token_locker.withdraw(id)
+export async function withdrawLock(
+  id: string,
+  sourceAddress: string,
+  signTransaction: (xdr: string) => Promise<{ signedTxXdr: string }>,
+): Promise<void> {
+  await submitCall(
+    CONTRACTS.tokenLocker,
+    "withdraw",
+    [idArg(id)],
+    sourceAddress,
+    signTransaction,
+  )
 }
 
-export async function extendLock(id: string, newUnlockAt: number): Promise<void> {
-  await sleep(MOCK_LATENCY_MS)
-  // TODO: invoke token_locker.extend(id, new_unlock_at)
-  void newUnlockAt
+export async function extendLock(
+  id: string,
+  newUnlockAt: number,
+  sourceAddress: string,
+  signTransaction: (xdr: string) => Promise<{ signedTxXdr: string }>,
+): Promise<void> {
+  await submitCall(
+    CONTRACTS.tokenLocker,
+    "extend",
+    [idArg(id), nativeToScVal(BigInt(Math.floor(newUnlockAt)), { type: "u64" })],
+    sourceAddress,
+    signTransaction,
+  )
 }

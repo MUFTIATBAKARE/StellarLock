@@ -22,18 +22,25 @@ const DEXES: { value: Dex; label: string; desc: string }[] = [
 ]
 
 export function CreateLpLockForm() {
-  const { address } = useWallet()
+  const { address, signTransaction } = useWallet()
   const navigate = useNavigate()
 
   const [dex, setDex] = useState<Dex>("aquarius")
   const [poolShareAddress, setPoolShareAddress] = useState("")
+  const [tokenA, setTokenA] = useState("")
+  const [tokenB, setTokenB] = useState("")
   const [amount, setAmount] = useState("")
   const [unlockDate, setUnlockDate] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
   const minDate = useMemo(() => new Date(Date.now() + DAY).toISOString().slice(0, 10), [])
   const unlockTs = unlockDate ? new Date(unlockDate).getTime() : 0
-  const valid = poolShareAddress.trim().length > 4 && Number(amount) > 0 && unlockTs > Date.now()
+  const valid =
+    poolShareAddress.trim().length > 4 &&
+    tokenA.trim().length > 4 &&
+    tokenB.trim().length > 4 &&
+    Number(amount) > 0 &&
+    unlockTs > Date.now()
 
   function applyPreset(days: number) {
     setUnlockDate(new Date(Date.now() + days * DAY).toISOString().slice(0, 10))
@@ -44,13 +51,19 @@ export function CreateLpLockForm() {
     if (!valid) return
     setSubmitting(true)
     try {
-      const { id } = await createLpLock({
-        poolShareAddress: poolShareAddress.trim(),
-        dex,
-        amount: Number(amount),
-        beneficiary: address!,
-        unlockAt: unlockTs,
-      })
+      const { id } = await createLpLock(
+        {
+          poolShareAddress: poolShareAddress.trim(),
+          dex,
+          tokenA: tokenA.trim(),
+          tokenB: tokenB.trim(),
+          amount: Number(amount),
+          beneficiary: address!,
+          unlockAt: Math.floor(unlockTs / 1000),
+        },
+        address!,
+        signTransaction,
+      )
       navigate(`/app/lock/${id}`)
     } finally {
       setSubmitting(false)
@@ -101,6 +114,29 @@ export function CreateLpLockForm() {
         <p className="text-xs text-muted-foreground">
           The contract address of your {dex === "aquarius" ? "Aquarius" : "Soroswap"} pool share token.
         </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="token-a">Token A address</Label>
+          <Input
+            id="token-a"
+            placeholder="C…"
+            value={tokenA}
+            onChange={(e) => setTokenA(e.target.value)}
+            className="font-mono"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="token-b">Token B address</Label>
+          <Input
+            id="token-b"
+            placeholder="C…"
+            value={tokenB}
+            onChange={(e) => setTokenB(e.target.value)}
+            className="font-mono"
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
