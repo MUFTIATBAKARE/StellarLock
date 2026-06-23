@@ -313,6 +313,29 @@ function LockDetailView({ lock, onChange }: { lock: Lock; onChange: () => void }
             </div>
           </div>
         )}
+
+        {transferOpen && canTransfer && (
+          <div ref={transferPanelRef} role="region" aria-label={t("lockDetail.transferBeneficiary")} className="border-t border-border bg-secondary/30 p-6">
+            <label className="text-sm font-medium" htmlFor="new-beneficiary">
+              {t("lockDetail.newBeneficiary")}
+            </label>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {t("lockDetail.transferHint")}
+            </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Input
+                id="new-beneficiary"
+                placeholder="G…"
+                value={newBeneficiary}
+                onChange={(e) => setNewBeneficiary(e.target.value)}
+                className="flex-1 font-mono"
+              />
+              <Button onClick={handleTransfer} loading={busy === "transfer"} disabled={!newBeneficiary.trim()}>
+                {t("lockDetail.confirmTransfer")}
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {lock.status === "locked" && (
