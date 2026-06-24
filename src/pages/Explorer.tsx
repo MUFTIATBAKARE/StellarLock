@@ -12,6 +12,7 @@ import { LockBadge } from "@/components/explorer/LockBadge"
 import { TokenSearchBar } from "@/components/explorer/TokenSearchBar"
 import { explorerLink } from "@/lib/stellar"
 import { formatAmount, formatDate, formatUsd, shortAddress } from "@/lib/utils"
+import { CopyButton } from "@/components/ui/CopyButton"
 
 export function Explorer() {
   const { t } = useTranslation()
@@ -23,7 +24,10 @@ export function Explorer() {
       {data && (
         <Helmet>
           <title>{data.token.symbol} Liquidity Locks | StellarLock</title>
-          <meta name="description" content={`${formatAmount(data.totalLocked)} ${data.token.symbol} locked across ${data.activeLocks} active locks on StellarLock.`} />
+          <meta
+            name="description"
+            content={`${formatAmount(data.totalLocked)} ${data.token.symbol} locked across ${data.activeLocks} active locks on StellarLock.`}
+          />
         </Helmet>
       )}
       <Link
@@ -48,15 +52,18 @@ export function Explorer() {
                   <h1 className="text-2xl font-bold">{data.token.name}</h1>
                   <Badge variant="primary">{data.token.symbol}</Badge>
                 </div>
-                <a
-                  href={explorerLink(data.token.address)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-flex items-center gap-1.5 font-mono text-sm text-muted-foreground transition-colors hover:text-primary"
-                >
-                  {shortAddress(data.token.address, 8, 8)}
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                <div className="flex items-center gap-1">
+                  <a
+                    href={explorerLink(data.token.address)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-1.5 font-mono text-sm text-muted-foreground transition-colors hover:text-primary"
+                  >
+                    {shortAddress(data.token.address, 8, 8)}
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                  <CopyButton text={data.token.address} />
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2 rounded-xl border border-success/40 bg-success/10 px-4 py-3">
@@ -99,9 +106,7 @@ export function Explorer() {
           {/* Shareable badge */}
           <section className="rounded-2xl border border-border bg-card p-6">
             <h2 className="text-lg font-semibold">{t("explorer.shareTitle")}</h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              {t("explorer.shareDesc")}
-            </p>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t("explorer.shareDesc")}</p>
             <div className="mt-5">
               <LockBadge summary={data} />
             </div>
@@ -145,7 +150,9 @@ function NotFound({ query }: { query: string }) {
       <h1 className="text-xl font-semibold">{t("explorer.noLocksTitle")}</h1>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
         <Trans i18nKey="explorer.noLocksDesc" values={{ query: shortAddress(query, 6, 6) }}>
-          We couldn&apos;t find any locks for <span className="font-mono text-foreground">{{ query: shortAddress(query, 6, 6) } as unknown as string}</span>.
+          We couldn&apos;t find any locks for{" "}
+          <span className="font-mono text-foreground">{{ query: shortAddress(query, 6, 6) } as unknown as string}</span>
+          .
         </Trans>
       </p>
       <div className="mt-6">

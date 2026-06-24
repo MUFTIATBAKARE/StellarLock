@@ -9,6 +9,7 @@ import { useTokenBalance } from "@/hooks/useLocks"
 import { createTokenLock } from "@/lib/token-locker"
 import { trackEvent } from "@/lib/analytics"
 import { formatDate } from "@/lib/utils"
+import { ConfirmLockModal } from "@/components/locks/ConfirmLockModal"
 
 const DAY = 86_400_000
 
@@ -24,10 +25,10 @@ export function CreateTokenLockForm() {
   const [vesting, setVesting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showConfirm, setShowConfirm] = useState(false)
 
-  const validTokenAddress = tokenAddress.trim().length === 56 && tokenAddress.trim().startsWith("C")
-    ? tokenAddress.trim()
-    : undefined
+  const validTokenAddress =
+    tokenAddress.trim().length === 56 && tokenAddress.trim().startsWith("C") ? tokenAddress.trim() : undefined
   const { data: balance, loading: balanceLoading } = useTokenBalance(validTokenAddress, address ?? null)
 
   const presets = [
@@ -45,10 +46,14 @@ export function CreateTokenLockForm() {
     setUnlockDate(new Date(Date.now() + days * DAY).toISOString().slice(0, 10))
   }
 
-  async function submit(e: FormEvent) {
+  function submit(e: FormEvent) {
     e.preventDefault()
     if (!valid) return
     setError(null)
+    setShowConfirm(true)
+  }
+
+  async function confirmLock() {
     setSubmitting(true)
     try {
       const { id } = await createTokenLock(
@@ -57,9 +62,7 @@ export function CreateTokenLockForm() {
           amount: Number(amount),
           beneficiary: beneficiary.trim() || address!,
           unlockAt: Math.floor(unlockTs / 1000),
-          vesting: vesting
-            ? { start: Math.floor(Date.now() / 1000), end: Math.floor(unlockTs / 1000) }
-            : undefined,
+          vesting: vesting ? { start: Math.floor(Date.now() / 1000), end: Math.floor(unlockTs / 1000) } : undefined,
         },
         address!,
         signTransaction,
@@ -68,6 +71,7 @@ export function CreateTokenLockForm() {
       navigate(`/app/lock/${id}`)
     } catch (err: unknown) {
       console.error("[createLock error]", err)
+      setShowConfirm(false)
       if (err instanceof Error) {
         setError(err.message)
       } else if (typeof err === "object" && err !== null) {
@@ -81,6 +85,7 @@ export function CreateTokenLockForm() {
   }
 
   return (
+    <>
     <form onSubmit={submit} className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
         <Label htmlFor="token">{t("tokenForm.tokenAddress")}</Label>
@@ -91,9 +96,7 @@ export function CreateTokenLockForm() {
           onChange={(e) => setTokenAddress(e.target.value)}
           className="font-mono"
         />
-        <p className="text-xs text-muted-foreground">
-          {t("tokenForm.tokenHint")}
-        </p>
+        <p className="text-xs text-muted-foreground">{t("tokenForm.tokenHint")}</p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -143,9 +146,7 @@ export function CreateTokenLockForm() {
           value={beneficiary}
           onChange={(e) => setBeneficiary(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">
-          {t("tokenForm.beneficiaryHint")}
-        </p>
+        <p className="text-xs text-muted-foreground">{t("tokenForm.beneficiaryHint")}</p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -180,9 +181,7 @@ export function CreateTokenLockForm() {
         />
         <span className="text-sm">
           <span className="font-medium">{t("tokenForm.vestingLabel")}</span>
-          <span className="block text-muted-foreground">
-            {t("tokenForm.vestingDesc")}
-          </span>
+          <span className="block text-muted-foreground">{t("tokenForm.vestingDesc")}</span>
         </span>
       </label>
 
@@ -194,7 +193,11 @@ export function CreateTokenLockForm() {
             <>
               {" "}
               <Trans i18nKey="tokenForm.fundsUnlockOn" values={{ date: formatDate(unlockTs) }}>
-                Funds unlock on <span className="font-medium text-foreground">{{ date: formatDate(unlockTs) } as unknown as string}</span>.
+                Funds unlock on{" "}
+                <span className="font-medium text-foreground">
+                  {{ date: formatDate(unlockTs) } as unknown as string}
+                </span>
+                .
               </Trans>
             </>
           )}
@@ -203,7 +206,10 @@ export function CreateTokenLockForm() {
 
       <div aria-live="polite" aria-atomic="true">
         {error && (
-          <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <div
+            role="alert"
+            className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          >
             {error}
           </div>
         )}
@@ -214,5 +220,21 @@ export function CreateTokenLockForm() {
         {t("tokenForm.submit")}
       </Button>
     </form>
+
+    {showConfirm && (
+      <ConfirmLockModal
+        data={{
+          tokenAddress: tokenAddress.trim(),
+          amount: amount,
+          beneficiary: beneficiary.trim() || address!,
+          unlockDate: unlockDate,
+          vesting,
+        }}
+        onConfirm={confirmLock}
+        onCancel={() => setShowConfirm(false)}
+        loading={submitting}
+      />
+    )}
+  </>
   )
 }
