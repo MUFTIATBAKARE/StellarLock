@@ -176,6 +176,8 @@
     "recentLocks": "Recent Locks",
     "upcomingUnlocks": "Upcoming Unlocks",
     "featuredTokens": "Featured Tokens",
+    "recentActivity": "Recent Activity",
+    "noRecentActivity": "No recent activity yet.",
     "totalLocks": "Total Locks",
     "totalValueLocked": "Total Value Locked",
     "tokensSecured": "Tokens Secured",

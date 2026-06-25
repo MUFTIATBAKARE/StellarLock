@@ -176,6 +176,8 @@
     "recentLocks": "최근 잠금",
     "upcomingUnlocks": "다가오는 잠금 해제",
     "featuredTokens": "주요 토큰",
+    "recentActivity": "최근 활동",
+    "noRecentActivity": "최근 활동이 없습니다.",
     "totalLocks": "총 잠금 수",
     "totalValueLocked": "총 잠금 가치",
     "tokensSecured": "보호된 토큰",
