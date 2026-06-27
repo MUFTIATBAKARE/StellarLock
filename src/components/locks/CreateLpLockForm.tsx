@@ -13,6 +13,7 @@ import { createLpLock } from "@/lib/lp-locker"
 import { trackEvent } from "@/lib/analytics"
 import { CONTRACTS, type TxPhase } from "@/lib/stellar"
 import { ConfirmLockModal } from "@/components/locks/ConfirmLockModal"
+import { isValidStellarContractAddress, isValidStellarPublicKey } from "@/lib/stellar"
 import { CostEstimate } from "@/components/locks/CostEstimate"
 
 const DAY = 86_400_000
@@ -31,6 +32,7 @@ export function CreateLpLockForm() {
   const [submitting, setSubmitting] = useState(false)
   const [txPhase, setTxPhase] = useState<TxPhase | "idle">("idle")
   const [showConfirm, setShowConfirm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
   const [description, setDescription] = useState("")
   const [projectUrl, setProjectUrl] = useState("")
@@ -50,7 +52,18 @@ export function CreateLpLockForm() {
 
   const minDate = useMemo(() => new Date(Date.now() + DAY).toISOString().slice(0, 10), [])
   const unlockTs = unlockDate ? new Date(unlockDate).getTime() : 0
+  const trimmedPoolShareAddress = poolShareAddress.trim()
+  const trimmedTokenA = tokenA.trim()
+  const trimmedTokenB = tokenB.trim()
+  const poolAddressValid = isValidStellarContractAddress(trimmedPoolShareAddress)
+  const tokenAValid = isValidStellarContractAddress(trimmedTokenA)
+  const tokenBValid = isValidStellarContractAddress(trimmedTokenB)
+  const beneficiaryValid = isValidStellarPublicKey(address || "")
   const valid =
+    poolAddressValid &&
+    tokenAValid &&
+    tokenBValid &&
+    beneficiaryValid &&
     isValidStellarAddress(poolShareAddress.trim()) &&
     isValidStellarAddress(tokenA.trim()) &&
     isValidStellarAddress(tokenB.trim()) &&
@@ -96,6 +109,7 @@ export function CreateLpLockForm() {
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!valid) return
+    setError(null)
     setShowConfirm(true)
   }
 
@@ -119,6 +133,16 @@ export function CreateLpLockForm() {
       )
       trackEvent("lock_create_lp", { dex })
       navigate(`/app/lock/${id}`)
+    } catch (err: unknown) {
+      console.error("[createLpLock error]", err)
+      setShowConfirm(false)
+      if (err instanceof Error) {
+        setError(err.message)
+      } else if (typeof err === "object" && err !== null) {
+        setError(JSON.stringify(err, null, 2))
+      } else {
+        setError(String(err))
+      }
     } finally {
       setSubmitting(false)
       setTxPhase("idle")
@@ -166,6 +190,7 @@ export function CreateLpLockForm() {
           value={poolShareAddress}
           onChange={(e) => setPoolShareAddress(e.target.value)}
           className="font-mono"
+          aria-invalid={!!trimmedPoolShareAddress && !poolAddressValid}
         />
         <p className="text-xs text-muted-foreground">
           {t("lpForm.poolHint", { dex: dex === "aquarius" ? t("lpForm.aquarius") : t("lpForm.soroswap") })}
@@ -181,6 +206,7 @@ export function CreateLpLockForm() {
             value={tokenA}
             onChange={(e) => setTokenA(e.target.value)}
             className="font-mono"
+            aria-invalid={!!trimmedTokenA && !tokenAValid}
           />
         </div>
         <div className="flex flex-col gap-2">
@@ -191,6 +217,7 @@ export function CreateLpLockForm() {
             value={tokenB}
             onChange={(e) => setTokenB(e.target.value)}
             className="font-mono"
+            aria-invalid={!!trimmedTokenB && !tokenBValid}
           />
         </div>
       </div>
@@ -312,6 +339,17 @@ export function CreateLpLockForm() {
         <Droplets className="h-4 w-4" />
         {t("lpForm.submit")}
       </Button>
+
+      <div aria-live="polite" aria-atomic="true">
+        {error && (
+          <div
+            role="alert"
+            className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            {error}
+          </div>
+        )}
+      </div>
     </form>
 
     {showConfirm && (
