@@ -44,12 +44,26 @@ const CONTRACT_ERRORS: Record<string, Omit<StructuredError, 'code'>> = {
     link:     null,
     i18nKey:  'errors.canOnlyExtend',
   },
-  LockDurationTooLong: {
-    title:    'errors.lockDurationTooLong.title',
-    message:  'errors.lockDurationTooLong.message',
-    recovery: 'errors.lockDurationTooLong.recovery',
+  UnlockTooSoon: {
+    title:    'errors.unlockTooSoon.title',
+    message:  'errors.unlockTooSoon.message',
+    recovery: 'errors.unlockTooSoon.recovery',
     link:     null,
-    i18nKey:  'errors.lockDurationTooLong',
+    i18nKey:  'errors.unlockTooSoon',
+  },
+  ExtensionLimitReached: {
+    title:    'errors.extensionLimitReached.title',
+    message:  'errors.extensionLimitReached.message',
+    recovery: 'errors.extensionLimitReached.recovery',
+    link:     null,
+    i18nKey:  'errors.extensionLimitReached',
+  },
+  UnlockExceedsMax: {
+    title:    'errors.unlockExceedsMax.title',
+    message:  'errors.unlockExceedsMax.message',
+    recovery: 'errors.unlockExceedsMax.recovery',
+    link:     null,
+    i18nKey:  'errors.unlockExceedsMax',
   },
 };
 
