@@ -22,7 +22,7 @@ export function Layout() {
       <WalletAlerts />
       <Navbar />
       <Breadcrumbs />
-      <main id="main-content" className="flex-1">
+      <main id="main-content" className="flex-1" tabIndex={-1}>
         <Outlet />
       </main>
       <Footer />
